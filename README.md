@@ -1,16 +1,11 @@
 # <ins>**Robotics</ins> - Final Project**: Battlebot
 
----
-
 __Telkom University__, Bandung, Indonesia
 
 ##### Group Members:
 - 1102224262 - Sinarjonnan Prastiyaji Ariyanto
 - 1102224278 - Lintar Alvisyahmulya Sukoco
 - 1102224221 - Rasyad Rifatan Rahman Dingang Patianom
-
----
-
 
 ## Control Scheme
 
@@ -25,14 +20,10 @@ Left Bumper   = Rotate Left
 Right Stick   = Steering
 
 
----
-
 ## To-Do
 
 - Adjust and tinker with the steering value
 - Maybe make the R2 and L2 priotiy system based on the throttle and brake values?
-
----
 
 ## Dependencies
 
