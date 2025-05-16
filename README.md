@@ -13,11 +13,11 @@ XBOX Series controller (xinput) is used for this project, although with the [Blu
 
 **Control Scheme**
 
-Right Trigger = Accelerate
-Left Trigger  = Decelerate
-Right Bumper  = Rotate Right
-Left Bumper   = Rotate Left
-Right Stick   = Steering
+Right Trigger = Accelerate<br>
+Left Trigger  = Decelerate<br>
+Right Bumper  = Rotate Right<br>
+Left Bumper   = Rotate Left<br>
+Right Stick   = Steering<br>
 
 
 ## To-Do
