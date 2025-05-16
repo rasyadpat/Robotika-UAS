@@ -9,7 +9,7 @@ __Telkom University__, Bandung, Indonesia
 
 ## Control Scheme
 
-XBOX Series controller (xinput) is used for this project, although with the [Bluepad32](https://github.com/ricardoquesada/bluepad32) package, most bluetooth based controllers should work.
+XBOX Series controller (XInput) is used for this project, although with the [Bluepad32](https://github.com/ricardoquesada/bluepad32) package, most bluetooth based controllers should work.
 
 **Control Scheme**
 
@@ -23,7 +23,7 @@ Right Stick   = Steering<br>
 ## To-Do
 
 - Adjust and tinker with the steering value
-- Maybe make the R2 and L2 priotiy system based on the throttle and brake values?
+- Maybe make the R2 and L2 priority system based on the throttle and brake values?
 
 ## Dependencies
 
