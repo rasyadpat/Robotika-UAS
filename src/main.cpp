@@ -12,6 +12,8 @@ Right Stick   = Steering
 
 // TODO tinker with the steering value
 // TODO maybe make the R2 and L2 priotiy system based on the throttle and brake values?
+// TODO optimize int pwm to byte and other data types that might need optimization
+// TODO optimize so that handleacceleration handles the default setspeed instead of handlesteering
 
 #include <Arduino.h>
 #include <L298NX2.h>
@@ -24,14 +26,14 @@ Right Stick   = Steering
 #define PWM_UPPER_LIMIT 255
 
 // Left DC Motor
-int ENA = 0;
-int IN1 = 0; 
-int IN2 = 0;
+int ENA = 26;
+int IN1 = 27; 
+int IN2 = 14;
 
 // Right DC Motor
-int ENB = 0;
-int IN3 = 0; 
-int IN4 = 0; 
+int ENB = 25;
+int IN3 = 32; 
+int IN4 = 33; 
 
 L298NX2 DCMotors(ENA,IN1,IN2,ENB,IN3,IN4);
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
@@ -40,6 +42,9 @@ void onConnectedController(ControllerPtr ctl);
 void onDisconnectedController(ControllerPtr ctl);
 void processControllers();
 void processGamepad(ControllerPtr ctl);
+void handleSteering(ControllerPtr ctl, int* pwm, int* axisX_position, int* steerStrength);
+void handleRotation(ControllerPtr ctl, int* pwm);
+void handleAcceleration(ControllerPtr ctl);
 
 void setup() {
   Serial.begin(115200);
@@ -66,45 +71,42 @@ void loop() {
     );
   }
 
-  
   vTaskDelay(10 / portTICK_PERIOD_MS);  
 }
 
 void onConnectedController(ControllerPtr ctl) {
-    bool foundEmptySlot = false;
-    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
-        if (myControllers[i] == nullptr) {
-            Serial.printf("CALLBACK: Controller is connected, index=%d\n", i);
-            // Additionally, you can get certain gamepad properties like:
-            // Model, VID, PID, BTAddr, flags, etc.
-            ControllerProperties properties = ctl->getProperties();
-            Serial.printf("Controller model: %s, VID=0x%04x, PID=0x%04x\n", ctl->getModelName().c_str(), properties.vendor_id,
-                           properties.product_id);
-            myControllers[i] = ctl;
-            foundEmptySlot = true;
-            break;
-        }
+  bool foundEmptySlot = false;
+  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+    if (myControllers[i] == nullptr) {
+      Serial.printf("CALLBACK: Controller is connected, index=%d\n", i);
+      ControllerProperties properties = ctl->getProperties();
+      Serial.printf("Controller model: %s, VID=0x%04x, PID=0x%04x\n", ctl->getModelName().c_str(), properties.vendor_id,
+                      properties.product_id);
+      myControllers[i] = ctl;
+      foundEmptySlot = true;
+      break;
     }
-    if (!foundEmptySlot) {
-        Serial.println("CALLBACK: Controller connected, but could not found empty slot");
-    }
+  }
+  if (!foundEmptySlot) {
+    Serial.println("CALLBACK: Controller connected, but could not found empty slot");
+  }
 }
 
 void onDisconnectedController(ControllerPtr ctl) {
-    bool foundController = false;
+  bool foundController = false;
 
-    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
-        if (myControllers[i] == ctl) {
-            Serial.printf("CALLBACK: Controller disconnected from index=%d\n", i);
-            myControllers[i] = nullptr;
-            foundController = true;
-            break;
-        }
+  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+    if (myControllers[i] == ctl) {
+      Serial.printf("CALLBACK: Controller disconnected from index=%d\n", i);
+      myControllers[i] = nullptr;
+      foundController = true;
+      break;
     }
+  }
 
-    if (!foundController) {
-        Serial.println("CALLBACK: Controller disconnected, but not found in myControllers");
-    }
+  if (!foundController) {
+    Serial.println("CALLBACK: Controller disconnected, but not found in myControllers");
+  }
 }
 
 void processControllers() {
@@ -132,37 +134,51 @@ void processGamepad(ControllerPtr ctl) {
     Left
   Steer */
   // Set default pwm if the steer is at default position/within the deadzone
-  if (axisX_position > -LS_DEADZONE && axisX_position < LS_DEADZONE)
-  {
-    // Optimized so that it only sets the pwm if there's been a change
-    static int prevPwm = -1;
-    if (prevPwm != pwm || DCMotors.getSpeedA() != pwm || DCMotors.getSpeedB() != pwm){
-      DCMotors.setSpeed(pwm);
-      prevPwm = pwm;
-    }
-  }
-  // Steer to the right by reducing the left motor's pwm value
-  else if (axisX_position >= LS_DEADZONE && pwm > MAPPED_PWM_DEADZONE)
-  {
-    DCMotors.setSpeedA(pwm);
-    DCMotors.setSpeedB(constrain(pwm - steerStrength,MAPPED_PWM_DEADZONE,255));
-  }
-  // Steer to the left by reducing the right motor's pwm value
-  else if (axisX_position <= -LS_DEADZONE && pwm > MAPPED_PWM_DEADZONE)
-  {
-    DCMotors.setSpeedB(pwm);
-    DCMotors.setSpeedA(constrain(pwm - steerStrength,MAPPED_PWM_DEADZONE,255));
-  }
-  
+  handleSteering(ctl, &pwm, &axisX_position, &steerStrength);
 
   /* Right
     Left
-  Rotation*/
+  Rotation */
+  handleRotation(ctl, &pwm);
+
+  /* Acceleration
+    and
+  Deceleration */
+  // Since L1 and R1 (Rotation) is prioritized over R2 and L2 (Acceleration/Deceleration), acceleration is only handled when L1 and R1 are not pressed
+  if (!(ctl->r1() || ctl->l1())) handleAcceleration(ctl);
+}
+
+void handleSteering(ControllerPtr ctl, int* pwm, int* axisX_position, int* steerStrength){
+  // Set default pwm if the steer is at default position/within the deadzone
+  if (*axisX_position > -LS_DEADZONE && *axisX_position < LS_DEADZONE)
+  {
+    // Optimized so that it only sets the pwm if there's been a change
+    static int prevPwm = -1;
+    if (prevPwm != *pwm || DCMotors.getSpeedA() != *pwm || DCMotors.getSpeedB() != *pwm){
+      DCMotors.setSpeed(*pwm);
+      prevPwm = *pwm;
+    }
+  }
+  // Steer to the right by reducing the left motor's pwm value
+  else if (*axisX_position >= LS_DEADZONE && *pwm > MAPPED_PWM_DEADZONE)
+  {
+    DCMotors.setSpeedA(*pwm);
+    DCMotors.setSpeedB(constrain(*pwm - *steerStrength,MAPPED_PWM_DEADZONE,255));
+  }
+  // Steer to the left by reducing the right motor's pwm value
+  else if (*axisX_position <= -LS_DEADZONE && *pwm > MAPPED_PWM_DEADZONE)
+  {
+    DCMotors.setSpeedB(*pwm);
+    DCMotors.setSpeedA(constrain(*pwm - *steerStrength,MAPPED_PWM_DEADZONE,255));
+  }
+}
+
+void handleRotation(ControllerPtr ctl, int* pwm){
   bool wasRotating_flag = false;
   // Rotate to the left, will use the default rotate pwm speed if the current pwm is within the mapped PWM deadzone (both triggers are at the default position)
   if (ctl -> l1() && !ctl->r1())
   {
-    if (pwm <= MAPPED_PWM_DEADZONE) DCMotors.setSpeed(IDLE_ROTATE_PWM_SPEED);
+    if (*pwm <= MAPPED_PWM_DEADZONE) DCMotors.setSpeed(IDLE_ROTATE_PWM_SPEED);
     DCMotors.forwardB();
     DCMotors.backwardA();
     wasRotating_flag = true;
@@ -171,7 +187,7 @@ void processGamepad(ControllerPtr ctl) {
   // Rotate to the right, will use the default rotate pwm speed if the current pwm is within the mapped PWM deadzone (both triggers are at the default position)
   else if (ctl -> r1() && !ctl->l1())
   {
-    if (pwm <= MAPPED_PWM_DEADZONE) DCMotors.setSpeed(IDLE_ROTATE_PWM_SPEED);
+    if (*pwm <= MAPPED_PWM_DEADZONE) DCMotors.setSpeed(IDLE_ROTATE_PWM_SPEED);
     DCMotors.forwardA();
     DCMotors.backwardB();
     wasRotating_flag = true;
@@ -183,18 +199,14 @@ void processGamepad(ControllerPtr ctl) {
     wasRotating_flag = true;
     return;
   }
-  // Since L1 and R1 (Rotation) is prioritized over R2 and L2 (Acceleration/Deceleration), the function is ended early by returning it
   // Reset when both are released
   if  (wasRotating_flag && !ctl->r1() && !ctl->l1()){
     DCMotors.setSpeed(0);
     wasRotating_flag = false;
   }
+}
 
-
-  /* Acceleration
-    and
-  Deceleration*/
-  // L2 and R2 Priority System, whichever one gets pressed first will be counted.
+void handleAcceleration(ControllerPtr ctl){
   static bool actionInProgress_flag = false;
   static unsigned long l2PressedTime = 0;
   static unsigned long r2PressedTime = 0;
@@ -213,13 +225,13 @@ void processGamepad(ControllerPtr ctl) {
     actionInProgress_flag = true;
   }
   // If only R2 is pressed, then it will accelerate
-  if (ctl -> r2() && !actionInProgress_flag && !ctl->l2())
+  if (ctl -> r2()  && !ctl->l2() && !actionInProgress_flag)
   {
     DCMotors.forward();
     actionInProgress_flag = true;
   }
   // If only L2 is pressed, then it will decelerate
-  if (ctl -> l2() && !actionInProgress_flag && !ctl->r2())
+  if (ctl -> l2()  && !ctl->r2() && !actionInProgress_flag)
   {
     DCMotors.backward();
     actionInProgress_flag = true;

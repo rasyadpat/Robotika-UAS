@@ -22,6 +22,8 @@ Right Stick   = Steering<br>
 
 - Adjust and tinker with the steering value
 - Maybe make the R2 and L2 priority system based on the throttle and brake values?
+- Optimize int pwm to byte and other data types that might need optimization
+- Optimize so that handleacceleration handles the default setspeed instead of handlesteering
 
 ## Dependencies
 
